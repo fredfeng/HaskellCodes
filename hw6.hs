@@ -62,10 +62,24 @@ data Exp = Literal   Value
   
 type Env = [(String, Value)]
 
+
+fst3 :: (a, b, c) -> a
+fst3 (x, _, _) = x
+
+thd3 :: (a, b, c) -> c
+thd3 (_, _, x) = x
+
+grep [] newType = TError
+grep (x:xs) newType = if (fst x == newType) then 
+                          snd x
+                      else 
+                          grep xs newType
+                        
 --Type inference
 --infer :: Exp -> Type
-infer e = let constr = fst (getConstraints e 1)
-          in unification constr
+infer e = let constr = (getConstraints e 1)
+            in let newType = thd3 constr
+                in grep (unification (fst3 constr)) newType
 
 --extract constraints
 --getConstraints :: Exp -> [(Type, Type)]
