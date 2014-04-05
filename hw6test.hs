@@ -1,6 +1,7 @@
 module HW6test where
 
 import HW6parse
+import HW6
 
 main = do
   print (parseExp "2 + 23 * (3 + 2) / 2")
