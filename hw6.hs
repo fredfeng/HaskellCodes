@@ -30,6 +30,7 @@ module HW6 where
 import Prelude hiding (LT, GT, EQ, id)
 import Data.Maybe
 import Data.List
+import qualified Data.Map as Map  
 
 
 data BinaryOp = Add | Sub | Mul | Div | And | Or
@@ -70,38 +71,121 @@ thd3 :: (a, b, c) -> c
 thd3 (_, _, x) = x
 
 grep [] newType = TError
-grep (x:xs) newType = if (fst x == newType) then 
-                          snd x
+grep (x:xs) newType = if checkError (x:xs) then
+                          TError
                       else 
-                          grep xs newType
+                          if (fst x == newType) then 
+                              snd x
+                          else 
+                              grep xs newType
                         
+checkError [] = False
+checkError (x:xs) = if (fst x == TError) then
+                        True
+                    else
+                        checkError xs
 --Type inference
---infer :: Exp -> Type
-infer e = let constr = (getConstraints e 1)
-            in let newType = thd3 constr
-                in grep (unification (fst3 constr)) newType
+infer :: Exp -> Type
+infer e = let env = Map.empty
+            in let constr = (getConstraints e 1 env)
+                in let newType = thd3 constr
+                    in grep (unification (fst3 constr)) newType
+                    --in unification (fst3 constr) 
+
+eliminate :: Maybe Type -> Type 
+eliminate (Just a) = a
 
 --extract constraints
 --getConstraints :: Exp -> [(Type, Type)]
-getConstraints (Literal (IntV x)) f = let new = TVar ("x"++ show f) 
+getConstraints (Literal (IntV x)) f env = let new = TVar ("x"++ show f) 
                            in ([(new, TInt)], f, new)
 
-getConstraints (Binary Add e1 e2) f = let new = TVar ("x"++ show f) in
-                             let (c1, f1, t1) = getConstraints e1 (f+1) in
-                             let (c2, f2, t2) = getConstraints e2 (f1+1) in
+getConstraints (Literal (BoolV x)) f env = let new = TVar ("x"++ show f) 
+                           in ([(new, TBool)], f, new)
+
+--no constraints for Variable x
+getConstraints (Variable  x) f env = 
+            if Map.member x $ env then
+            --get the value from env.
+                let tx = eliminate (Map.lookup x $ env)
+                in  ([], f, tx)
+            else
+            --create a new one.
+                ([], f, (TVar("x"++ show f)))
+            --polymorphism....
+
+getConstraints (Binary Add e1 e2) f env = let new = TVar ("x"++ show f) in
+                             let (c1, f1, t1) = getConstraints e1 (f+1) env in
+                             let (c2, f2, t2) = getConstraints e2 (f1+1) env in
                              ([(new, TInt), (t1,TInt), (t2,TInt)] ++ c1 ++ c2, f, new)
 
-getConstraints (Binary EQ e1 e2) f = let new = TVar ("x"++ show f) in
-                            let (c1, f1, t1) = getConstraints e1 (f+1) in
-                            let (c2, f2, t2) = getConstraints e2 (f1+1) in
+getConstraints (Binary Mul e1 e2) f env = let new = TVar ("x"++ show f) in
+                             let (c1, f1, t1) = getConstraints e1 (f+1) env in
+                             let (c2, f2, t2) = getConstraints e2 (f1+1) env in
+                             ([(new, TInt), (t1,TInt), (t2,TInt)] ++ c1 ++ c2, f, new)
+
+getConstraints (Binary EQ e1 e2) f env = let new = TVar ("x"++ show f) in
+                            let (c1, f1, t1) = getConstraints e1 (f+1) env in
+                            let (c2, f2, t2) = getConstraints e2 (f1+1) env in
                             ([(new, TBool), (t1,t2)] ++ c1 ++ c2, f, new)
 
-substinty tyX tyT tyS = f tyS
+
+getConstraints (Function x body) f env = let tme = TVar ("x"++ show f) in
+                            let tx = TVar ("x"++ show (f+1)) in
+                            let newenv =  Map.insert ("x"++ show(f+1)) tx env in
+                            let (c1, f1, tbody) = getConstraints body (f+1) env in
+                            ([(tme, (TFun tx tbody))] ++ c1, f, tme)
+
+--getConstraints (Call e1 e2) f = let new = TVar ("x"++ show f) in
+--                            let (c1, f1, (TFun t11 t12)) = getConstraints e1 (f+1) in
+ --                           let (c2, f2, t2) = getConstraints e2 (f1+1) in
+ --                           ([(new, t12), (t11,t2)] ++ c1 ++ c2, f, new)
+
+getConstraints (Call e1 e2) f env = let new = TVar ("x"++ show f) in
+                            let (c1, f1, t1) = getConstraints e1 (f+1) env in
+                            let (c2, f2, t2) = getConstraints e2 (f1+1) env in
+                            ([(t1, (TFun t2 new))] ++ c1 ++ c2, f, new)
+
+
+getConstraints (Declare str e1 e2) f env = let new = TVar ("x"++ show f) in
+                            let (c1, f1, t1) = getConstraints e1 (f+1) env in
+                            let (c2, f2, t2) = getConstraints e2 (f1+1) env in
+                            ([(new, t2)] ++ c1 ++ c2, f, new)
+
+getConstraints (If e1 e2 e3) f env = let new = TVar ("x"++ show f) in
+                            let (c1, f1, t1) = getConstraints e1 (f+1) env in
+                            let (c2, f2, t2) = getConstraints e2 (f1+1) env in
+                            let (c3, f3, t3) = getConstraints e3 (f2+1) env in
+                            ([(t1, TBool), (t2,t3)] ++ c1 ++ c2 ++ c3, f, new)
+
+
+replace x e1 (Literal a) = Literal a
+replace x e1 (Variable y) = if x == y then
+                                e1
+                            else 
+                                Variable y
+replace x e1 (Binary Add e2 e3) = (Binary Add (replace x e1 e2) (replace x e1 e3)) 
+replace x e1 (Binary Mul e2 e3) = (Binary Mul (replace x e1 e2) (replace x e1 e3)) 
+replace x e1 (Call e2 e3) = (Call (replace x e1 e2) (replace x e1 e3)) 
+
+replace x e1 (Declare y e2 e3) = if x==y then
+                                     (Declare y e2 e3) 
+                                 else
+                                     (Declare y (replace x e1 e2) (replace x e1 e3)) 
+
+substinty tyX tyT tyS = 
+--f tyS
+    case tyS of
+        TInt -> TInt
+        TBool -> TBool
+        TVar xx -> if xx==tyX then tyT else (TVar xx)
+        TFun tyS1 tyS2 -> (TFun (substinty tyX tyT tyS1) (substinty tyX tyT tyS2))
+{-
     where
             f (TFun tyS1 tyS2) = (TFun (f tyS1) (f tyS2))
             f TInt = TInt
             f TBool = TBool
-            f (TVar xx) = if xx==tyX then tyT else (TVar xx)
+            f (TVar xx) = if xx==tyX then tyT else (TVar xx)-}
 
 occur tyX tyT = occr tyT 
                 where   occr (TFun tyT1 tyT2) = (occr tyT1) || (occr tyT2)
@@ -122,7 +206,9 @@ unification ll = unify ll
                 --error fi (msg ^ ": circular constraints")
                 [(tyS,TError)]
             else
-                (unify (substinconstr tyX tyS rest)) ++ [((TVar tyX),tyS)]
+                --(unify (substinconstr tyX tyS rest)) ++ [((TVar tyX),tyS)]
+                --(unify (substinconstr tyX tyS rest)) ++ [((TVar tyX),tyS)]
+                compose (unify (substinconstr tyX tyS rest)) ((TVar tyX),tyS)
         unify (((TVar tyX),tyT):rest) =
             if tyT == (TVar tyX) then 
                 unify rest 
@@ -131,11 +217,29 @@ unification ll = unify ll
                 [(tyT,TError)]
             else
                 --(unify (substinconstr tyX tyT rest)) ++ [((TVar tyX),tyT)]
-                (unify (substinconstr tyX tyT rest)) ++ [((TVar tyX),tyT)]
+                compose (unify (substinconstr tyX tyT rest))  ((TVar tyX),tyT)
         unify ((TInt,TInt):xs) = unify xs
         unify ((TBool,TBool):xs) = unify xs
         unify (((TFun s1 t1),(TFun s2 t2)):xs) = unify ((s1,s2):(t1,t2):xs)
+        unify _ = [(TError,TError)]
 
+compose :: [(Type, Type)] -> (Type, Type) -> [(Type, Type)]
+compose l (tx, ty) =
+        case l of 
+            [] -> [(tx, ty)]
+            x:xs -> case x of 
+                        (ttx, (TFun y1 y2)) -> (compose xs (tx,ty)) ++ [(ttx, (TFun (swap y1 (tx,ty)) (swap y2 (tx,ty))))]
+                        (ttx, tty) -> if tty == tx then
+                                            (compose xs (tx,ty)) ++  [(ttx, ty)]
+                                      else 
+                                            (compose xs (tx,ty)) ++  [(ttx, tty)]
+                        --(ttx, _) -> l ++ [(tx, ty)]
+
+swap :: Type -> (Type, Type) -> Type
+swap tx (ty1, ty2) = if tx == ty1 then
+                         ty2
+                     else 
+                         tx
 {-
 let applysubst constr tyT =
     List.fold_left
