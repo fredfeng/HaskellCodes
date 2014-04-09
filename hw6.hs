@@ -133,7 +133,7 @@ getConstraints (Binary EQ e1 e2) f env = let new = TVar ("x"++ show f) in
 getConstraints (Function x body) f env = let tme = TVar ("x"++ show f) in
                             let tx = TVar ("x"++ show (f+1)) in
                             let newenv =  Map.insert ("x"++ show(f+1)) tx env in
-                            let (c1, f1, tbody) = getConstraints body (f+1) env in
+                            let (c1, f1, tbody) = getConstraints body (f+1) newenv in
                             ([(tme, (TFun tx tbody))] ++ c1, f, tme)
 
 --getConstraints (Call e1 e2) f = let new = TVar ("x"++ show f) in
@@ -223,23 +223,55 @@ unification ll = unify ll
         unify (((TFun s1 t1),(TFun s2 t2)):xs) = unify ((s1,s2):(t1,t2):xs)
         unify _ = [(TError,TError)]
 
-compose :: [(Type, Type)] -> (Type, Type) -> [(Type, Type)]
+--compose :: [(Type, Type)] -> (Type, Type) -> [(Type, Type)]
+compose l (tx, ty) =
+        let lhs = [ (x,y) | (x,y) <- l, x /= tx] in 
+        --let orgMap = (Map.fromList l) in 
+        --let orgMap = Map.empty  in 
+        --let newMap = (Map.insert tx ty $ orgMap) in
+        --_ -> Map.toList (Map.insert tx (queryType ty newMap) $ newMap)
+            case ty of
+                TInt -> lhs ++ [(tx,ty)]
+                TBool -> lhs ++ [(tx,ty)]
+                _   -> lhs ++ [(tx,(queryType ty lhs))]
+
+--queryType :: (Type, Type) -> Data.Map -> Type
+queryType ty env =
+        case ty of
+            (TVar x)  -> 
+                     --if (Map.member ty $ env) then
+                        --eliminate (Map.lookup ty $ env) 
+                    solve env ty
+            (TFun f1 f2) -> TFun (queryType f1 env) (queryType f2 env)
+
+solve [] ty = ty
+solve (x:xs) newType = 
+                      if (fst x == newType) then 
+                          snd x
+                      else 
+                          grep xs newType
+ 
+{-
 compose l (tx, ty) =
         case l of 
             [] -> [(tx, ty)]
             x:xs -> case x of 
-                        (ttx, (TFun y1 y2)) -> (compose xs (tx,ty)) ++ [(ttx, (TFun (swap y1 (tx,ty)) (swap y2 (tx,ty))))]
-                        (ttx, tty) -> if tty == tx then
-                                            (compose xs (tx,ty)) ++  [(ttx, ty)]
-                                      else 
-                                            (compose xs (tx,ty)) ++  [(ttx, tty)]
-                        --(ttx, _) -> l ++ [(tx, ty)]
+                (ttx, (TFun y1 y2)) -> (compose xs (tx,ty)) ++ [(ttx, (TFun (swap y1 (tx,ty)) (swap y2 (tx,ty))))]
+                (ttx, tty) -> if tty == tx then
+                                    (compose xs (tx,ty)) ++  [(ttx, ty)]
+                              else 
+                                    (compose xs (tx,ty)) ++  [(ttx, tty)] -}
 
 swap :: Type -> (Type, Type) -> Type
 swap tx (ty1, ty2) = if tx == ty1 then
                          ty2
                      else 
                          tx
+
+--let-polymorphism
+--generalize l =
+
+
 {-
 let applysubst constr tyT =
     List.fold_left
